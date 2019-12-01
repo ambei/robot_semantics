@@ -83,10 +83,9 @@ class VideoEncoder(nn.Module):
         Xv = F.relu(Xv)
 
         Xv, (hi, ci) = self.lstm(Xv)
-        Xv = Xv[:,-1,:]     # Only need the last timestep
+        #Xv = Xv[:,-1,:]     # Only need the last timestep
         hi, ci = hi[0,:,:], ci[0,:,:]
-        #print('lstm:', Xv.shape, 'hi:', hi.shape, 'ci:', ci.shape)
-        return Xv, (hi, ci)
+        return Xv
 
     def reset_parameters(self):
         for n, p in self.named_parameters():
@@ -113,10 +112,11 @@ class CommandDecoder(nn.Module):
         self.embed_dim = embed_dim
 
         self.embed = nn.Embedding(vocab_size, embed_dim)
-        self.lstm_cell = nn.LSTMCell(embed_dim + units, units)
+        self.lstm_cell = nn.LSTMCell(embed_dim, units)
         self.logits = nn.Linear(units, vocab_size, bias=True)
         self.softmax = nn.LogSoftmax(dim=1)
         self.reset_parameters(bias_vector)
+        self.initialized = False
 
     def forward(self, 
                 Xs, 
@@ -124,23 +124,32 @@ class CommandDecoder(nn.Module):
                 Xv):
         # Phase 2: Decoding Stage
         # Given the previous word token, generate next caption word using lstm2
-        # Sequence processing and generating
-        #print('sentence decoding stage:')
-        #print('Xs:', Xs.shape)
-        Xs = self.embed(Xs)
-        #print('embed:', Xs.shape)
-        #print('Xv:', Xv.shape)
-        x = torch.cat((Xv, Xs), dim=-1)
-        #print(x.shape)
-        #exit()
 
-        hi, ci = self.lstm_cell(x, states)
-        #print('out:', hi.shape, 'hi:', states[0].shape, 'ci:', states[1].shape)
+        # Not initialized, use Xv only:
+        if not self.initialized:
+            for timestep in range(Xv.shape[1]):
+                hi, ci = self.lstm_cell(Xv[:,timestep,:])
+            x = None
+            self.initialized = True
 
-        x = self.logits(hi)
-        #print('logits:', x.shape)
-        x = self.softmax(x)
-        #print('softmax:', x.shape)
+        else:
+            # Sequence processing and generating
+            #print('sentence decoding stage:')
+            #print('Xs:', Xs.shape)
+            Xs = self.embed(Xs)
+            #print('embed:', Xs.shape)
+            #print('Xv:', Xv.shape)
+            #x = torch.cat((Xv, Xs), dim=-1)
+            #print(x.shape)
+            #exit()
+
+            hi, ci = self.lstm_cell(Xs, states)
+            #print('out:', hi.shape, 'hi:', states[0].shape, 'ci:', states[1].shape)
+
+            x = self.logits(hi)
+            #print('logits:', x.shape)
+            x = self.softmax(x)
+            #print('softmax:', x.shape)
         return x, (hi, ci)
 
     def init_hidden(self, 
@@ -229,7 +238,11 @@ class Video2Command():
 
             # Forward pass
             # Video feature extraction 1st
-            Xv, states = self.video_encoder(Xv)
+            Xv = self.video_encoder(Xv)
+
+            # Init decoder states using Xv
+            states = self.command_decoder.init_hidden(Xv.shape[0])
+            _, states = self.command_decoder(None, states, Xv)
 
             # Calculate mask against zero-padding
             S_mask = S != 0
@@ -241,6 +254,7 @@ class Video2Command():
                 # Calculate loss per word
                 loss += self.loss_objective(probs, S[:,timestep+1])
             loss = loss / S_mask.sum()     # Loss per word
+            self.command_decoder.initialized = False
 
             # Gradient backward
             loss.backward()
@@ -303,7 +317,9 @@ class Video2Command():
             S = S.to(self.device)
 
             # Start v2c prediction pipeline
-            Xv, states = self.video_encoder(Xv)
+            Xv = self.video_encoder(Xv)
+            states = self.command_decoder.init_hidden(Xv.shape[0])
+            _, states = self.command_decoder(None, states, Xv)
 
             #states = self.command_decoder.reset_states(Xv.shape[0])
             #_, states = self.command_decoder(None, states, Xv=Xv)   # Encode video features 1st
@@ -312,6 +328,7 @@ class Video2Command():
                 probs, states = self.command_decoder(Xs, states, Xv)
                 preds = torch.argmax(probs, dim=1)    # Collect prediction
                 S[:,timestep+1] = preds
+            self.command_decoder.initialized = False
         return S
 
     def save_weights(self, 

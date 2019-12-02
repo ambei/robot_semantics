@@ -129,7 +129,7 @@ class CommandDecoder(nn.Module):
         if not self.initialized:
             for timestep in range(Xv.shape[1]):
                 Xv_step = Xv[:,timestep,:]
-                x = torch.cat((Xv_step, torch.zeros(Xv_step.shape).to(self.device)), dim=-1)
+                x = torch.cat((Xv_step, torch.zeros(Xv_step.shape)), dim=-1)
                 hi, ci = self.lstm_cell(x)
             x = None
             self.initialized = True

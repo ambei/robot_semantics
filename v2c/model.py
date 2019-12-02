@@ -112,7 +112,7 @@ class CommandDecoder(nn.Module):
         self.embed_dim = embed_dim
 
         self.embed = nn.Embedding(vocab_size, embed_dim)
-        self.lstm_cell = nn.LSTMCell(embed_dim, units)
+        self.lstm_cell = nn.LSTMCell(embed_dim + units, units)
         self.logits = nn.Linear(units, vocab_size, bias=True)
         self.softmax = nn.LogSoftmax(dim=1)
         self.reset_parameters(bias_vector)
@@ -128,7 +128,9 @@ class CommandDecoder(nn.Module):
         # Not initialized, use Xv only:
         if not self.initialized:
             for timestep in range(Xv.shape[1]):
-                hi, ci = self.lstm_cell(Xv[:,timestep,:])
+                Xv_step = Xv[:,timestep,:]
+                x = torch.cat((Xv_step, torch.zeros(Xv_step.shape)), dim=-1)
+                hi, ci = self.lstm_cell(x)
             x = None
             self.initialized = True
 
@@ -139,11 +141,11 @@ class CommandDecoder(nn.Module):
             Xs = self.embed(Xs)
             #print('embed:', Xs.shape)
             #print('Xv:', Xv.shape)
-            #x = torch.cat((Xv, Xs), dim=-1)
+            x = torch.cat((Xv[:,-1,:], Xs), dim=-1)
             #print(x.shape)
             #exit()
 
-            hi, ci = self.lstm_cell(Xs, states)
+            hi, ci = self.lstm_cell(x, states)
             #print('out:', hi.shape, 'hi:', states[0].shape, 'ci:', states[1].shape)
 
             x = self.logits(hi)

@@ -192,7 +192,7 @@ def override_caption(caption):
     """
     caption = caption.replace('lefthand', 'humanhand')
     caption = caption.replace('righthand', 'humanhand')
-    caption = caption.replace('_', ' ')
+    #caption = caption.replace('_', ' ')
     return caption
 
 def process_caption(captions,
